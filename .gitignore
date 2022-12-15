@@ -1,0 +1,14 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+slope.tif
+aspect.tif
+elevation.tif
+writeFormulaExample.xlsx
+all_pem_tem_crosswalk_IM_04_08_2022.xlsx
+bapids_not_in_last_year_xwalk.csv
+inputs/
+outputs/
+archive/
+temp/
