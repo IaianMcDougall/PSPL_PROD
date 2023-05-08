@@ -16,6 +16,10 @@ library(RPostgres)
 library(keyring)
 library(terra)
 library(rgdal)
+library(openxlsx)
+library(faibDataManagement)
+
+
 
 #In Workspaces
 root <- 'D:/Projects/PSPL_2022/IAIAN_VERSION/R_SCRIPTS'
@@ -26,7 +30,7 @@ publicTemp <- 'C:/Users/Public/pspl/temp'
 inMetaGdb<- file.path(gdbs, 'Metadata_and_Templates.gdb') 
 inOper <- 'D:/Projects/PSPL_2022/IAIAN_VERSION/R_SCRIPTS/inputs/gdbs/TEI_Operational_Data.gdb'
 inOperpem <- 'D:/Projects/PSPL_2022/IAIAN_VERSION/R_SCRIPTS/inputs/gdbs/TEI_Operational_Data_PEM.gdb'
-bcGDB <- 'J:/Site_Prod_master_v8_20210805/Supporting_Data/BC_Data.gdb'
+bcGDB <- 'D:/Projects/PSPL_2022/BC_Data.gdb'
 
 #In Tables
 inBapids <- 'site_prod_bapids'
@@ -34,6 +38,7 @@ inTblProj <- 'tblProjects_20210618'
 teisLng <- 'TEIS_Master_Long_Tbl'
 pemLng <- 'PEM_Master_Long_Tbl'
 oldxwalk <- file.path(inputs,'all_pem_tem_crosswalk_20210629_JMM.csv')
+projectsCSV <- 'D:\\Projects\\PSPL_2022\\IAIAN_VERSION\\R_SCRIPTS\\inputs\\gdbs\\tblProjects_exported_2022_07_26.csv'
 
 #dbs
 pgDB <- 'prov_data'
@@ -41,6 +46,9 @@ pgDB <- 'prov_data'
 #schemas
 psplSchema <- 'pspl'
 whseSchema<- 'whse'
+
+#Database connections
+connList <- faibDataManagement::get_pg_conn_list()
 
 #Primary Keys
 teisPk <- 'TEIS_ID'
@@ -50,7 +58,7 @@ bapidpk <- 'BAPID'
 #fields to keep
 reqTeisFlds <- c(teisPk,'BAPID', 'BGC_ZONE', 'BGC_SUBZON', 'BGC_VRT', 'BGC_PHASE', 'SDEC_1', 'SITE_S1', 'SITEMC_S1',
                       'SDEC_2', 'SITE_S2', 'SITEMC_S2', 'SDEC_3', 'SITE_S3', 'SITEMC_S3', 'SERAL_1', 'SERAL_2',
-                      'SERAL_3')
+                      'SERAL_3','SITE_M1A','SITE_M2A','SITE_M3A','SITE_M1B','SITE_M2B','SITE_M3B')
   
 #PG tables
 xwalkpgprev <- 'xwalkprev'
@@ -86,100 +94,6 @@ createPGxwalk <- file.path(sql,'createNewXwalk.sql')
 
 setwd(root)
 
-#Query PG and return results to a dataframe
-getTableQueryPsql<-function(sql, schema){
-      conn<-dbConnect(RPostgres::Postgres(),
-                    host = key_get('dbhost', keyring = 'localpsql'),
-                    user = key_get('dbuser', keyring = 'localpsql'),
-                    dbname = 'prov_data',
-                    password = key_get('dbpass', keyring = 'localpsql'),
-                    port = "5432",
-                    options=paste0("-c search_path=",schema)
-                    )
-  on.exit(dbDisconnect(conn))
-  dbGetQuery(conn, sql)}
-
-#Data Frame 2 pg
-df2Psql<-function(pgTbl,inDF,schema,overwrite=T,append=F){
-  conn<-dbConnect(RPostgres::Postgres(),
-                    host = key_get('dbhost', keyring = 'localpsql'),
-                    user = key_get('dbuser', keyring = 'localpsql'),
-                    dbname = 'prov_data',
-                    password = key_get('dbpass', keyring = 'localpsql'),
-                    port = "5432",
-                  options=paste0("-c search_path=",schema))
-  on.exit(dbDisconnect(conn))
-  dbWriteTable(conn, pgTbl,value = inDF, overwrite = overwrite, append = append, row.names = FALSE)}
-
-#Send a sql statment to  pg
-sendSQLstatement<-function(sql,schema){
-    conn<-dbConnect(RPostgres::Postgres(),
-                    host = key_get('dbhost', keyring = 'localpsql'),
-                    user = key_get('dbuser', keyring = 'localpsql'),
-                    dbname = 'prov_data',
-                    password = key_get('dbpass', keyring = 'localpsql'),
-                    port = "5432",
-                    options=paste0("-c search_path=",schema)
-                    )
-  on.exit(dbDisconnect(conn))
-  dbExecute(conn, statement = sql)
-}
-
-#Run sql file with variables
-runSQL <- function(sqlVar,sqlFile){
-          cmd <-  c("-d",pgDB,"-f",sqlFile)
-          for(i in sqlVar){
-            cmd <- append(cmd,"-v")
-            cmd <- append(cmd,i)
-          }
-        print(cmd)
-       print(system2("psql",args=cmd,wait=TRUE,stdout=TRUE,stderr=TRUE)) 
-        }
-
-# Write non spatial tables to PG using gdal on the machine.  Creates index on primary key.  Use for large files that would take too long to import into R
-writeNoSpaTbl2PG <- function(src,outTblName,lyr=NULL,pk=NULL,select=NULL,where_clause=NULL,schema=NULL){
-  if(is.na(lyr)){lyr <- NULL}
-  if(is.na(pk)){ pk <- NULL}
-  if(is.na(select)){select <- NULL}
-  if(is.null(where_clause)){print('no where clause')}
-  else{if(is.na(where_clause)){where_clause <- NULL}}
-  
-  if(is.null(schema)) {
-    outName <- paste0('-nln ',outTblName)}
-    else{
-    outName <- paste0('-nln ',schema,".",outTblName)}
-  
-  
-  if(is.null(select) ||is.na(select) || select == '' ){print('keep all attributes')
-    select <- ''}
-  else{select <- gsub(",shape", "", select)
-    select <- gsub(",geometry", "", select)
-  if (endsWith(select, ',')) {select <-  sprintf('-select "%s"', substr(select,1,nchar(select)-1))}
-  else{select <-  sprintf('-select "%s"', select)}}
-
-  where <- ''
-  if( is.null(where_clause) ||is.na(where_clause) || where_clause == ''){print('no where clause')} else{
-    where <- sprintf('-where "%s"', where_clause)}
-
-  print('Creating non-spatial table')
-  print(system2('ogr2ogr',args=c('-nlt NONE',
-                                   '-overwrite',
-                                   '-gt 200000',
-                                   where,
-                                   select,
-                                   outName,
-                                   '--config PG_USE_COPY YES',
-                                   '-progress',
-                                   '-f PostgreSQL PG:dbname=prov_data',
-                                   src,
-                                   lyr), stderr = TRUE))
-#Create index on pk
-if( !is.null(pk)){
-  print('Creatin index for non spatial table')
-  outTblNameNoPer <-  gsub("\\.", "_", outTblName)
-  sendSQLstatement(paste0("drop index if exists ", ... = outTblNameNoPer,"_ogc_inx;"),schema)
-  sendSQLstatement(paste0("create index ", outTblNameNoPer,"_ogc_inx",  " on ", outTblName, "(", pk,");"),schema)}}
-
 #Format colnames for PG (i.e. lower case and replace '.' with '_')
 formatColNames <- function(df){
   names(df) <- gsub(x = tolower(names(df)), pattern = "\\.", replacement = "_")  
@@ -195,35 +109,42 @@ updating bapid table
 need to fill in region and approved fields for new projects
 ```{r updBapid,eval=TRUE, echo=FALSE, message=FALSE}
 
-#read in exisiting bapid tbl
+#read in exisiting bapid tbl 
 dfBapids <- sf::st_read(dsn = inMetaGdb, layer = inBapids) 
 names(dfBapids) <- tolower(names(dfBapids))
 names(dfBapids) <- gsub(x = tolower(names(dfBapids)), pattern = "\\.", replacement = "_")
+
+
 #read in project table
-# dfProjTBl <- sf::st_read(dsn = inOper, layer = inTblProj) 
-dfProjTBl <- read.csv('D:\\Projects\\PSPL_2022\\IAIAN_VERSION\\R_SCRIPTS\\inputs\\gdbs\\tblProjects_exported_2022_07_26.csv')
+dfProjTBl <- read.csv(projectsCSV)
 names(dfProjTBl) <- tolower(names(dfProjTBl))
 names(dfProjTBl) <- gsub(x = tolower(names(dfProjTBl)), pattern = "\\.", replacement = "_")
 
 
-#Filter out proj types a=taht are not pem,tem or nem
-filterDF <- dfProjTBl[grepl("TEM|PEM|NEM", dfProjTBl$PROJ_TYPE,ignore.case = TRUE),]
-idsNotin <- setdiff(filterDF$BAPID,dfBapids$BAPID)
-filterDF2 <- filterDF[filterDF$BAPID %in% idsNotin,]
+#Filter out proj types that are not pem,tem or nem
+filterDF <- dfProjTBl[grepl("TEM|PEM|NEM", dfProjTBl$proj_type,ignore.case = TRUE),]
+idsNotin <- setdiff(filterDF$bapid,dfBapids$bapid)
+filterDF2 <- filterDF[filterDF$bapid %in% idsNotin,]
+
+#Add columns names missing from projects data that is in the BAPID table
+bapidCols <- colnames(dfBapids)
+projTblCols <- colnames(filterDF2)
+col_diff <- setdiff(bapidCols,projTblCols)
+filterDF2[col_diff] <- NA
+filterDF3 <- filterDF2[,bapidCols]
 
 #Write csv are bapids.  Make sure  REGION and APPROVED fields are out by ecologists
-if (dim(filterDF2)[1] == 0){
+if (dim(filterDF3)[1] == 0){
 print("empty dataset")
 }else{
-filterDF2$REGION <- NA
-filterDF2$APPROVED <- NA
-finalBAPID <- rbind(filterDF2[colnames(dfBapids)],dfBapids)
-write.csv(finalBAPID,outBapids,row.names = FALSE)}
+finalBAPID <- rbind(filterDF3,dfBapids)
+write.csv(finalBAPID,outBapids,row.names = FALSE)
+}
 ```
 
 ## Import Inputs 2 pg
 
-Import Inputs 2 pg
+- Import Inputs 2 pg
 ```{r importPG,eval=FALSE, echo=FALSE, message=FALSE}
 
 ##Copy Long Tables to PG only including specified fields
@@ -233,12 +154,8 @@ if("Shape_Area" %in% teisFlds){teisFldsApp <- append(reqTeisFlds,'Shape_Area')}e
 if("Shape_Area" %in% pemFlds){ pemFldsApp <- append(reqTeisFlds,'Shape_Area')}else{append(reqTeisFlds,'Geometry_Area')}
 teisFldsApp <- paste(teisFldsApp, collapse = ",")
 pemFldsApp <- paste(pemFldsApp, collapse = ",")
-paths <- c(inOper,inOperpem)
-outTblNames <- c(teispg,pempg)
-lyrs <- c(teisLng, pemLng)
-pks <- c(teisPk,teisPk)
-fields <- c(teisFldsApp,pemFldsApp)
-mapply(writeNoSpaTbl2PG,paths,outTblNames,lyrs,pks,fields,schema=psplSchema)
+faibDataManagement::writeNoSpaTbl2PG(inOper,teispg,connList,lyr=teisLng,pk=teisPk,select=teisFldsApp,schema=psplSchema)
+faibDataManagement::writeNoSpaTbl2PG(inOperpem,pempg,connList,lyr=pemLng,pk=teisPk,select=pemFldsApp,schema=psplSchema)
 
 #Copy Bapid and Previous Year Crosswalk to PG
 inbapidcsv <- read.csv(outBapids)
@@ -246,8 +163,11 @@ names(inbapidcsv) <- tolower(names(inbapidcsv))
 inoldxwalk <- read.csv(oldxwalk)
 names(inoldxwalk) <- gsub(x = tolower(names(inoldxwalk)), pattern = "\\.", replacement = "_")
 
-df2Psql(bapidspg,inbapidcsv,psplSchema)
-df2Psql(xwalkpgprev,inoldxwalk,psplSchema)
+bapidspgSch <- DBI::Id(schema = psplSchema, table =bapidspg )
+df2PG(bapidspgSch,inbapidcsv,connList)
+
+xwalkpgprevSch <- DBI::Id(schema = psplSchema, table =xwalkpgprev )
+df2PG(xwalkpgprevSch,inoldxwalk,connList)
 ```
 
 ## Create New Xwalk in PG
@@ -255,10 +175,14 @@ Create New Xwalk in PG
 ```{r newxwalk,eval=FALSE, echo=FALSE, message=FALSE}
 
 #Group Long Tables into bapid, site series, sir
+xwalkpgprevSch2 <- glue(psplSchema,'.',xwalkpgprev )
+bapidspgSch2 <- glue(psplSchema,'.',bapidspg )
+
 sqlVarList <- list(c(teisgrp,teispg), c(pemgrp,pempg))
 lapply(sqlVarList,function(x){
-            sqlVar <- c(paste0("grpTbl=",x[1]),paste0("lngTbl=",x[2]),paste0("schema=",psplSchema))
-            runSQL(sqlVar,grp_lng_tbl )})
+            sqlVar <- c(paste0("grpTbl=",x[1]),paste0("lngTbl=",x[2]),paste0("schema=",psplSchema),paste0("bapids=",bapidspgSch2),paste0("xwalkprev=",xwalkpgprevSch2))
+            faibDataManagement::runSQL(sqlVar,grp_lng_tbl,pgDB )
+            })
 
 ##Copy SIBEC tables to PG
 sibecVersions <- c()
@@ -269,7 +193,7 @@ for(i in 2011:format(Sys.Date(), "%Y")){
     qry <- paste0('select * from ', lyr)
     sibecDF <- sf::st_read(dsn = bcGDB, query = qry)
     names(sibecDF) <- tolower(names(sibecDF))
-    df2Psql(tolower(lyr),sibecDF,psplSchema)
+    df2PG(DBI::Id(schema = psplSchema, table =tolower(lyr)),sibecDF,connList)
     
     x <- paste0('sibec_',toString(i))
     sibecVersions <- append(sibecVersions, x )
@@ -309,7 +233,7 @@ sqlVar <- c(paste0("schema=",psplSchema),
             paste0("sibecFields=",caseStrAll),
             paste0("missrowsprev=",missrowsprev)
             )
-            runSQL(sqlVar,createPGxwalk)
+            runSQL(sqlVar,createPGxwalk,pgDB)
             
 
 ```
@@ -318,14 +242,16 @@ sqlVar <- c(paste0("schema=",psplSchema),
 
 Create New Xwalk in PG
 ```{r xwalk2excel,eval=FALSE, echo=FALSE, message=FALSE}
-library(openxlsx)
 
-updxwallkDF <- getTableQueryPsql(paste0('select * from ',updxwalk),psplSchema)
+updxwalkSch <- glue(psplSchema,'.',updxwalk)
+updxwallkDF <- faibDataManagement::getTableQueryPG(paste0('select * from ',updxwalkSch),connList)
 updxwallkDF$rownumber <- as.numeric(rownames(updxwallkDF))
 
-missrowsprevDF <- getTableQueryPsql(paste0('select * from ', missrowsprev,';'),psplSchema)
+missrowsprevSch <- glue(psplSchema,'.',missrowsprev)
+missrowsprevDF <- faibDataManagement::getTableQueryPG(paste0('select * from ', missrowsprevSch,';'),connList)
 
-supertbl <- getTableQueryPsql(paste0('select * from ',sibeclookup),psplSchema)
+sibeclookupSch <- glue(psplSchema,'.',sibeclookup)
+supertbl <- faibDataManagement::getTableQueryPG(paste0('select * from ',sibeclookupSch),connList)
 
 sibecColLen <- length(sibecVersions)
 xindex <- 20:23

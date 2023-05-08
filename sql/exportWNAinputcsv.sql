@@ -13,7 +13,7 @@ round((:slp)::numeric,0)
 :long as long,
 :ele as el
 FROM :resTable a 
-left outer join :latlongtbl b on a.ogc_fid = b.ogc_fid 
+left outer join :latlongtbl b on a.gr_skey = b.gr_skey 
 left outer join whse.bec_biogeoclimatic_poly c on a.objectid_bec = c.objectid  
 where b.row_id >= :low and b.row_id < :high
 and :becLbl is not Null and :zone is not Null and :ele >= 0 and :slp >= 0 and :asp >= 0) TO :filename (format CSV, HEADER)

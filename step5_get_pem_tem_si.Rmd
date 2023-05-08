@@ -1,0 +1,488 @@
+---
+title: "Step5_get_pem_tem_si"
+author: "Iaian M"
+date: '2022-07-04'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Params:
+```{r params,eval=TRUE, echo=TRUE, message=FALSE}
+library(sf)
+library(RPostgres)
+library(keyring)
+library(terra)
+library(rgdal)
+library(openxlsx)
+library(faibDataManagement)
+library(terra)
+library(crayon)
+library(glue)
+
+#In Workspaces
+root <- 'D:/Projects/PSPL_2022/IAIAN_VERSION/R_SCRIPTS'
+inputs <- file.path(root, 'inputs') 
+sql <- file.path(root, 'sql') 
+gdbs <- file.path(inputs, 'gdbs')
+tifs <- file.path(root, 'OUTPUTS','TIFS')
+csv <- file.path(root, 'OUTPUTS','CSV')
+inOper <- 'D:/Projects/PSPL_2022/IAIAN_VERSION/R_SCRIPTS/inputs/gdbs/TEI_Operational_Data.gdb'
+inOperpem <- 'D:/Projects/PSPL_2022/IAIAN_VERSION/R_SCRIPTS/inputs/gdbs/TEI_Operational_Data_PEM.gdb'
+bcGDB <- 'D:/Projects/PSPL_2022/BC_Data.gdb'
+
+#In Tables (gdb layers)
+pemLngGDB <- 'PEM_Master_Long_Tbl'  #in inOperpem
+temLngGDB <- 'TEIS_Master_Long_Tbl' #in inOper
+
+#In Tables (csv)
+winnerscsv <- file.path(inputs,'Site_Prod_BAPID_overlaps_20210706.csv')
+
+#In TIFs
+grskeyTIF  <- 'S:\\FOR\\VIC\\HTS\\ANA\\workarea\\PROVINCIAL\\bc_01ha_gr_skey.tif'
+
+#dbs
+pgDB <- 'prov_data'
+
+#schemas
+psplSch <- 'pspl'
+
+#Database connections
+connList <- faibDataManagement::get_pg_conn_list()
+
+#Primary Keys
+lngTblId <- 'teis_id'
+teisPk <- 'TEIS_ID'
+pemPK <- 'TEIS_ID'
+bapidpk <- 'BAPID'
+
+#PG tables
+pemLng <- 'pem_long_tbl'
+temLng <- 'teis_long_tbl'
+longtables <- c(pemLng,temLng)
+xwalk_filtered <- 'xwalk_filtered'
+
+pemfilterTbl <- 'pem_long_tblfilter'
+temfilterTbl <- 'teis_long_tblfilter'
+
+teisGrskeyTbl <- 'teis_id_grskey_long'
+teisBapidOverlapTbl <- 'teis_id_bapid_overlap'
+bapidOverlapTbl <- 'bapid_overlap'
+bapidOverlapTblwin <- 'bapidOverlapTblwin'
+clean_teis_id_gr_skey <- 'clean_teis_id_gr_skey'
+
+#Out paths
+latestSibec <- 'sibec2021'
+  
+#Out tables
+bapidOverlapsCSV <-  file.path(csv, 'bapidOverlaps.csv')
+sibeclookup <- 'sibeclookup'
+sibeclookupunique <- 'sibeclookupunique'
+xwalk_source_mismatch <- 'xwalk_source_mismatch'
+updxwalk <- 'updxwalk'
+
+
+not_unique_sibec <- 'not_unique_sibec'
+teisGrskeyTbl <- 'teis_id_grskey_long'
+teisGrskeyTblGrp <- 'teis_id_grskey_long_grp'
+
+#Out TIF
+ outTIFbase <- 'bapid'
+
+
+#sql scripts
+createLookupSQL <- file.path(sql,'create_sibec_lookups.sql')
+filterXwalkSQL <- file.path(sql,'filter_crosswalk_table.sql')
+updLongSQL <- file.path(sql,'updateLongTables.sql')
+filterLongSQL <- file.path(sql,'filterLongTables.sql')
+createBapidOverlapTblSQL  <- file.path(sql,'createBapidOverlapTbl.sql')
+removeOverlapsSQL <- file.path(sql,'remove_overlaps.sql')
+calc_pem_tem_siSQL <- file.path(sql,'create_teis_id_pem_tem_site_index_table.sql')
+
+#Extents
+extent <- c(273287.5,1870587.5,367787.5,1735787.5)
+
+```
+
+## functions
+```{r functions,eval=TRUE, echo=TRUE, message=FALSE}
+
+setwd(root)
+
+#Format colnames for PG (i.e. lower case and replace '.' with '_')
+formatColNames <- function(df){
+  names(df) <- gsub(x = tolower(names(df)), pattern = "\\.", replacement = "_")  
+  return(df)
+  
+getSQL <- function(filepath){
+  con = file(filepath, "r")
+  sql.string <- ""
+
+  while (TRUE){
+    line <- readLines(con, n = 1)
+
+    if ( length(line) == 0 ){
+      break
+    }
+
+    line <- gsub("\\t", " ", line)
+
+    if(grepl("--",line) == TRUE){
+      line <- paste(sub("--","/*",line),"*/")
+    }
+
+    sql.string <- paste(sql.string, line)
+  }
+
+  close(con)
+  return(sql.string)
+}
+  
+}
+
+
+
+```
+## CREATE SIBEC LOOKUP TABLES
+- Adds lookup key to SIBEC table
+- Creates SIBEC lookup table with one row for each 
+bgcunit,siteseries,region and source.  The SI values are kept by creating ordered arrays for species and SI values for each row
+```{r sibecLookup,eval=TRUE, echo=FALSE, message=FALSE}
+
+#create xwalk in pg
+sqlVar <- c(paste0("schema=",psplSch),
+            paste0("latestSibec=",latestSibec),
+            paste0("sibeclookup=",sibeclookup),
+            paste0("sibeclookupunique=",sibeclookupunique),
+            paste0("not_unique_sibec=",not_unique_sibec))
+            runSQL(sqlVar,createLookupSQL,pgDB)
+            
+nonUnique <- getTableQueryPG(glue("select * from {psplSch}.{not_unique_sibec}; "),connList)
+
+if(length(nonUnique$lookup) > 0){
+  cat(red(glue('****WARNING THERE ARE {length(nonUnique$lookup)} ROWS WITH DUPLICATE SIBEC LOOKUP KEYS ************************************************************************************************************************************************** ')))
+  
+}
+
+```
+## Filter Crosswalk table
+- Filters Crosswalk table to include only rows that join to SIBEC table 
+- Outputs table where source does not match between crosswalk table and sibec
+
+```{r filtxwalk,eval=TRUE, echo=FALSE, message=FALSE}
+
+#create xwalk in pg
+sqlVar <- c(paste0("schema=",psplSch),
+            paste0("xwalk_source_mismatch=",xwalk_source_mismatch),
+            paste0("updxwalk=",updxwalk),
+            paste0("sibeclookupunique=",sibeclookupunique),
+            paste0("xwalk_filtered=",xwalk_filtered))
+runSQL(sqlVar,filterXwalkSQL,pgDB)
+            
+nonUnique <- getTableQueryPG(glue("select * from {psplSch}.{xwalk_source_mismatch}; "),connList)
+
+if(length(nonUnique$lookup) > 0){
+  cat(red(glue('****WARNING THERE ARE {length(nonUnique$lookup)} ROWS WITH non matching SOURCES ************************************************************************************************************************************************** ')))
+  
+}
+
+```
+
+
+## Update Long Tables with hardcoded fixes
+- Updates long tables with hardcoded fixes (this is needed until they can be fixed in the TEIS environment)
+
+```{r harcodes,eval=TRUE, echo=FALSE, message=FALSE}
+
+#create xwalk in pg
+
+lapply(longtables, function(x){
+
+longTable <- x  
+longTableUpd <- glue(x,'upd')
+
+sqlVar <- c(paste0("schema=",psplSch),
+            paste0("longTableUpd=",longTableUpd),
+            paste0("longTable=",longTable))
+runSQL(sqlVar,updLongSQL,pgDB)
+
+updated <- getTableQueryPG(glue("select count(*) from {psplSch}.{longTableUpd} where
+                                  SITE_S3_UPD != SITE_S3 or
+                                  SITE_S2_UPD != SITE_S2 or
+                                  SITE_S1_UPD != SITE_S1; "),connList)
+
+if(updated$count == 0){
+  cat(red(glue('****WARNING: NO LONG LONG TABLE ROWS WERE UPDTED WITH HARDCODED FIXES ************************************************************************************************************************************************** ')))}else{cat(glue('{updated$count} rows were updated with hardcoded fixes' ))}
+            
+            
+})
+
+```
+
+## Filter Long Tables
+-  Creates three keys for each row in the  PEM/TEM long table
+    1. KEY1 = BAPID~BGC_ZONE BGC_SUBZON BGC_VRT BGC_PHASE~SITE_S1~SITEMC_S1~SERAL_1
+    2. KEY2 = BAPID~BGC_ZONE BGC_SUBZON BGC_VRT BGC_PHASE~SITE_S2~SITEMC_S2~SERAL_2
+    3. KEY3 = BAPID~BGC_ZONE BGC_SUBZON BGC_VRT BGC_PHASE~SITE_S3~SITEMC_S3~SERAL_3
+-  The filtered x walk table is joined to the long tables 3 times (once for each key) using the xwalk table key
+-  Each of the 3 SITE_SX~SITEMC_SX~SERAL_X sets are classified as with one of the following values
+    1.  IN SIBEC - given this classification if any species in the joined filtered xwalk table  (which has SIBEC data already joined to it)  has a si value 
+    2.  NCBF - (Not Crosswalkable but Forested) given this classification if no si value and the habitat subtype is in 
+              a. 'CONIFER FOREST - DRY', 
+			        b. 'CONIFER FOREST - MESIC (AVERAGE)', 
+			        c. 'CONIFER FOREST - MOIST/WET',
+              d. 'DECIDUOUS/BROADLEAF FOREST', 
+			        e. 'MIXED FOREST (DECIDUOUS/CONIFEROUS MIX)',
+              f. 'RIPARIAN FOREST', 
+			        g. 'SHORELINE FOREST', 
+			        h. 'TREED BOG', 
+			        i. 'TREED FEN', 
+			        j. 'TREED SWAMP'
+			        k  '%FORESTED%'
+			        
+			   and the habitat subtype is not parkland 
+    3.  UNK - given this classification if habitat subtype is in
+              a.UNKNOWN
+              b.UNDEFINED'
+              
+                  and
+                  
+		         a. BGC_ZONE NOT IN ('AT', 'BAFA', 'CMA', 'IMA') and
+	            substring(a.BGC_SUBZON,3) not in ('p','u','w')  and 
+			       SITE_SX != '00'
+    4.  NP - (non productive) given this classification the xwalk table is in
+             a. BGC_ZONE NOT IN ('AT', 'BAFA', 'CMA', 'IMA') and
+	            substring(a.BGC_SUBZON,3) not in ('p','u','w')  and 
+			       SITE_SX != '00'
+    
+    5.  NM - (not mapped) given this classification if no values exists in the xwalk table (i.e. bapid is Null )
+    
+- Only the roles that passed the following logic are kept.
+    (class_1 = 'IN SIBEC' or class_2 = 'IN SIBEC' or class_3 = 'IN SIBEC')  AND
+    (class_1 = 'IN SIBEC' or class_1 = 'NP' or class_1 = 'NM' ) and
+    (class_2 = 'IN SIBEC' or class_2 = 'NP' or class_2 = 'NM' ) and
+    (class_3 = 'IN SIBEC' or class_3 = 'NP' or class_3 = 'NM' )
+    
+  Any rows with any classification of NCBF or UNK was removed
+
+```{r filterLongTables,eval=TRUE, echo=FALSE, message=FALSE}
+
+#create xwalk in pg
+
+lapply(longtables, function(x){
+
+longTable <- x  
+longTableUpd <- glue(x,'upd')
+longTableSkinny <- glue(x,'skinny')
+longTableSkinny_filter <- glue(x,'filter')
+
+sqlVar <- c(paste0("schema=",psplSch),
+            paste0("longTableUpd=",longTableUpd),
+            paste0("longTableSkinny=",longTableSkinny),
+            paste0("longTableSkinny_filter=",longTableSkinny_filter),
+            paste0("xwalk_filtered=",xwalk_filtered))
+runSQL(sqlVar,filterLongSQL,pgDB)
+
+updated <- getTableQueryPG(glue("select count(*) from {psplSch}.{longTableSkinny_filter}; "),connList)
+
+print(glue('{updated$count} rows remainan in {longTableSkinny_filter}' ))
+
+            
+            
+}
+)
+
+updated <- getTableQueryPG(glue("select count(*) from pspl.pem_long_tblfilter where use = 1; "),connList)
+
+
+print(glue('{updated$count} rows remain in pspl.pem_long_tblfilter' ))
+
+
+```
+
+
+
+## RASTERIZE LONG TABLE POLYGONS WITH A VALID BAPID
+
+-  Loop through list of bapids that can be crossswalked with SIBEC
+-  For each bapid, select polygons with a matching bapid from long table. Rasterize the teis_id of these polygons to a tif.
+-  Assign a gr_skey for each teis_id
+-  Append gr_skey/teis_id data frame into postgresql
+
+```{r importLng,eval=TRUE, echo=FALSE, message=FALSE}
+###get list of bapids with valid polygons
+start.time <- Sys.time()
+
+#Create gr_skey dataframe by importing gr_skey tif and converting to a sequenced vector of the tif values
+terraExt <- terra::ext(extent)
+grskeyRast <- terra::rast(grskeyTIF)
+crs(grskeyRast) <-  "epsg:3005"
+grskeyRast <- terra::crop(grskeyRast,terraExt,datatype='INT4S')
+###Create dataframe from gr_skey raster
+grskeyValues <- as.integer(grskeyRast[])
+df <- data.frame(grskeyValues)
+
+#Get vectors of valid bapids 
+filterTables <- c(pemfilterTbl,temfilterTbl)
+validBapids <- lapply(filterTables, function(x){
+getBapidsSQL <- getTableQueryPG(glue('select bapid from {psplSch}.{x} where use = 1 group by bapid'),connList = connList)
+return(getBapidsSQL)
+})
+validBapidPEM <- unlist(validBapids[1],use.names=FALSE)
+validBapidTEM <- unlist(validBapids[2],use.names=FALSE)
+
+
+
+##drop teis Grskey tables
+sendSQLstatement(glue('drop table if exists {psplSch}.{teisGrskeyTbl} ', ), connList = connList)
+
+
+#Rasterize Function
+rasterize2pg <- function(x){
+#browser()
+outTifName <- glue(outTifName,as.character(x),'.tif')
+where_clause <- glue('bapid = ', as.character(x))
+
+faibDataManagement::rasterizeWithGdal(
+    lngTable,
+    lngTblId,
+    outTifpath = tifs,
+    outTifName,
+    inSrc = src,
+    vecExtent = extent,
+    nodata = 0,
+    where= where_clause,
+    datatype='UInt32')
+
+  teisidRast <- terra::rast(file.path(tifs,outTifName))
+  crs(teisidRast) <-  "epsg:3005"
+  teisidRast <- terra::crop(teisidRast,terraExt,datatype='INT4S')
+  
+  teisidRast <- as.integer(teisidRast[])
+  df$teis_id <- teisidRast
+  colnames(df) <- c('gr_skey','teis_id')
+  df1 <- df[!is.na(df$teis_id),]
+  df1 <- df1[!is.na(df1$gr_skey),]
+  faibDataManagement::df2PG(DBI::Id(schema = psplSch, table = teisGrskeyTbl),df1,connList = connList, overwrite=F,append=T)
+  }
+
+#Rasterize each valid bapid from PEM Long Table and merge in to grskey dataframe
+outTifName <- 'bapidPEM'
+lngTable <- pemLngGDB
+src <- inOperpem
+lapply(validBapidPEM,rasterize2pg)
+
+#Rasterize each valid bapid from TEM Long Table and merge in to grskey dataframe
+outTifName <- 'bapidTEM'
+lngTable <- temLngGDB
+src <- inOper 
+lapply(validBapidTEM,rasterize2pg)
+
+end.time <- Sys.time()
+time.taken <- end.time - start.time
+time.taken
+
+
+```
+
+## Make table of overlapping bapid
+-  In postgres, group grskey ids in the teis_id_gr_skey table.  
+-  All overlaping TEIS_IDs with be listed into an array by gr_skey
+
+need to fill in region and approved fields for new projects
+```{r overlaps,eval=TRUE, echo=FALSE, message=FALSE}
+
+
+##Import previouse winner table
+previousWinner <-  read.csv(winnerscsv)
+previousWinnerPG <- 'previouswinners'
+faibDataManagement::df2PG(DBI::Id(schema = psplSch, table = previousWinnerPG),previousWinner,connList = connList, overwrite=T)
+
+
+
+#create List of bapid combinations to be filled out manually
+sqlVar <- c(paste0("schema=",psplSch),
+            paste0("previousWinnerPG=",previousWinnerPG),
+            paste0("bapidOverlapTblwin=",bapidOverlapTblwin),
+            paste0("teisBapidOverlapTbl=",teisBapidOverlapTbl),
+            paste0("bapidOverlapTbl=",bapidOverlapTbl),
+            paste0("pemfilterTbl=",pemfilterTbl),
+            paste0("temfilterTbl=",temfilterTbl),
+            paste0("teisGrskeyTbl=",teisGrskeyTbl))
+runSQL(sqlVar,createBapidOverlapTblSQL,pgDB)
+
+
+bapidOverlaps <- getTableQueryPG(glue("select * from {psplSch}.{bapidOverlapTblwin}; "),connList)
+
+write.csv(bapidOverlaps,bapidOverlapsCSV,row.names = FALSE)
+
+#STOP FILL IN OVERLAPS MANUALLY THEN RE IMPORT TABLE (OTHERWISE THE FIST PROJECT IN THE BAPID ARRAY WILL BE CHOSEN AS THE WINNER)
+#THE FOLLOWING CODE RE_IMPORTS THE CSV
+
+##Import previouse winner table
+completeWinners <-  read.csv(bapidOverlapsCSV)
+completeWinnersPG <- 'completewinners'
+faibDataManagement::df2PG(DBI::Id(schema = psplSch, table = completeWinnersPG),completeWinners,connList = connList, overwrite=T)
+
+
+```
+
+
+## Resolve Overlaps
+-  Remove overlaps based on COmplete Winner bapid table
+
+
+```{r resolveoverlaps,eval=TRUE, echo=FALSE, message=FALSE}
+#create xwalk in pg
+sqlVar <- c(paste0("schema=",psplSch),
+            paste0("clean_teis_id_gr_skey=",clean_teis_id_gr_skey),
+            paste0("completeWinnersPG=",completeWinnersPG),
+            paste0("teisBapidOverlapTbl=",teisBapidOverlapTbl))
+runSQL(sqlVar,removeOverlapsSQL,pgDB)
+
+countGroupedTeis <- getTableQueryPG(glue('select count(*) from {psplSch}.{teisBapidOverlapTbl}'),connList) 
+countClean <- getTableQueryPG(glue('select count(*) from {psplSch}.{clean_teis_id_gr_skey}'),connList) 
+diff <- countClean$count - countGroupedTeis$count
+
+print(glue("Row check - Difference between grouped gr_skey table and clean = {diff}") )
+
+```
+## Create table of PEM TEM Site Index avarages by teid_id
+-  The filtered long table has a row for each TEIS_ID
+-  Each TEIS_ID has up to 3 ecosystem components
+-  Each ecosystem component was previously joined to the SIBEC data.  As a result, there is a separate set of multiple species site index values for each component (stored in ordered arrays).
+-  The decile of each ecosystem component provides approximate area prercentage of of component
+-  For each TEIS_ID, the site index values by species are averaged (weighted using decile values).
+-  There are instances where a species will not have a site index value for each ecosystem component. In these cases, the deciles of the components that do have a species site index value are added together.  The site index is then averaged, weighted by the proportion of the each individual component decile to the total of all the exisiting deciles together. For example:  
+sdec_1 = 2
+sdec_2 = 4
+sdec_2 = N/a
+
+areaweight sdec_1 = 2/6
+areaweight sdec_2 = 4/6
+
+-  For some teis_ids, the decile of the three ecossytem comppnents do not add to 10.  These are errors that are flagged.  In this cases, the proportion of each component over the total of the three deciles added together is used.
+
+
+
+```{r calcPEMTEM_SI,eval=TRUE, echo=FALSE, message=FALSE}
+
+#create xwalk in pg
+
+lapply(longtables, function(x){
+
+teis_id_pem_tem_si <- glue(x,'_teis_id_site_index') 
+longTableSkinny_filter <- glue(x,'filter')
+
+sqlVar <- c(paste0("schema=",psplSch),
+            paste0("teis_id_pem_tem_si=",teis_id_pem_tem_si),
+            paste0("longTableSkinny_filter=",longTableSkinny_filter))
+runSQL(sqlVar,calc_pem_tem_siSQL,pgDB)
+
+})
+
+```
+
+

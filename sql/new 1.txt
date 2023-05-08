@@ -1,0 +1,49 @@
+create table publish.ufr_harvest_itr as
+Select 
+sum(1.0) as area,
+harvest_year
+from whse.all_bc_gr_skey a
+left outer join  whse.fwa_assessment_watersheds_poly ass on  a.objectid_assess = ass.objectid
+left outer join  whse.im_fmlb fmlb on  a.gr_skey = fmlb.gr_skey
+left outer join  whse.all_bc_thlb thlb on  a.thlb_fid_thlb = thlb.thlb_fid
+left outer join  whse.Cut_Block_all_BC cc on  a.fid_cc = cc.fid
+left outer join  whse.bec_biogeoclimatic_poly bec on  a.objectid_bec = bec.objectid
+
+where
+WATERSHED_GROUP_ID in (15,
+35,
+122,
+139,
+146,
+177,
+197,
+222,
+244
+)
+and cc.fid > 0 and BGC_LABEL IN ( 'ICH wk 1' , 'ICH wk 2' , 'ICH wk 3' , 'ICH wk 4' , 'ICH vk 1' , 'ICH vk 2' )
+group by harvest_year;
+
+
+create table publish.ufr_totals_itr as
+Select 
+sum(1.0) as fmlb_area,
+sum(thlb_fact::numeric) as thlb_area,
+from whse.all_bc_gr_skey a
+left outer join  whse.fwa_assessment_watersheds_poly ass on  a.objectid_assess = ass.objectid
+left outer join  whse.im_fmlb fmlb on  a.gr_skey = fmlb.gr_skey
+left outer join  whse.all_bc_thlb thlb on  a.thlb_fid_thlb = thlb.thlb_fid
+left outer join  whse.Cut_Block_all_BC cc on  a.fid_cc = cc.fid
+left outer join  whse.bec_biogeoclimatic_poly bec on  a.objectid_bec = bec.objectid
+
+where
+WATERSHED_GROUP_ID in (15,
+35,
+122,
+139,
+146,
+177,
+197,
+222,
+244
+)
+and fmlb.gr_skey > 0 and and BGC_LABEL IN ( 'ICH wk 1' , 'ICH wk 2' , 'ICH wk 3' , 'ICH wk 4' , 'ICH vk 1' , 'ICH vk 2' )
