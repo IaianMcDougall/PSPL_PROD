@@ -11,12 +11,10 @@ union all
 select * from :teisgrp)
 select b.*
 from 
-:bapids a
-join t1 b on a.bapid = b.bapid 
-full outer join  :xwalkprev c
+t1 b 
+left outer join  :xwalkprev c
 on b.bapid = c.bapid and  b.bgc_unit = c.bgc_unit and b.site_s = c.site_s and b.sitemc_s = c.sitemc_s and b.seral = c.seral
 where c.bgc_unit is Null;
-
 
 
 drop table if exists :missLngTbls;
@@ -27,7 +25,7 @@ select * from :teisgrp)
 select c.*
 from 
 t1 b
-full outer join  :xwalkprev c
+right outer join  :xwalkprev c
 on b.bapid = c.bapid and  b.bgc_unit = c.bgc_unit and b.site_s = c.site_s and b.sitemc_s = c.sitemc_s and b.seral = c.seral
 where b.bapid is Null and c.area_ha > 0; 
 
@@ -106,18 +104,3 @@ on b.bapid = c.bapid and  b.bgc_unit = c.bgc_unit and b.site_s = c.site_s and b.
 where a.bapid is Null
 order by c.bapid,c.site_s;
  
-
-
-drop table if exists :sibeclookup;
-create table :sibeclookup as
-select bgcunit,
-siteseries,
-region,
-source,
-siteassociation,
-treespp,
-plotcountspp,
-meanplotsiteindex,
-standarderrorofmean,
-bgcunit || '~' || siteseries || '~' || region || '~' || source  as lookup
-from :latestSibec; 

@@ -1,0 +1,379 @@
+---Long Tables Rows not in fianl
+drop table if exists pspl.pem_long_tbl_not_in;
+Create table pspl.pem_long_tbl_not_in as
+select a.*,
+s1.bapid as bapid1_xwalk,
+s2.bapid as bapid2_xwalk,
+s3.bapid as bapid3_xwalk,
+s1.bgc_unit as bgc_unit1_xwalk,
+s2.bgc_unit as bgc_unit2_xwalk,
+s3.bgc_unit as bgc_unit3_xwalk,
+s1.site_s as site_s1_xwalk,
+s2.site_s as site_s2_xwalk,
+s3.site_s as site_s3_xwalk,
+s1.species as species1_xwalk ,
+s2.species as species2_xwalk ,
+s3.species as species3_xwalk ,
+s1.si as si1,
+s2.si as si2,	
+s3.si as si3,
+s1.region as region1 ,
+s2.region as region2 ,
+s3.region as region3 ,
+s1.source as source1 ,
+s2.source as source2 ,
+s3.source as source3 ,
+s1.xwalkkey as xwalkkey1 ,
+s2.xwalkkey as xwalkkey2 ,
+s3.xwalkkey as xwalkkey3 ,
+s1.HAB_SUBTYPE AS HAB_SUBTYPE1,
+s2.HAB_SUBTYPE AS HAB_SUBTYPE2,
+s3.HAB_SUBTYPE AS HAB_SUBTYPE3,
+s1.HAB2_SUBTYPE AS HAB2_SUBTYPE1,
+s2.HAB2_SUBTYPE AS HAB2_SUBTYPE2,
+s3.HAB2_SUBTYPE AS HAB2_SUBTYPE3,
+s1.Blank_Column AS Blank_Column1,
+s2.Blank_Column AS Blank_Column2,
+s3.Blank_Column AS Blank_Column3,
+case 
+	when s1.si not Null
+		then 'IN SIBEC'
+	when (UPPER(s1.HAB_SUBTYPE) in 
+			('CONIFER FOREST - DRY', 
+			 'CONIFER FOREST - MESIC (AVERAGE)', 
+			 'CONIFER FOREST - MOIST/WET',
+             'DECIDUOUS/BROADLEAF FOREST', 
+			 'MIXED FOREST (DECIDUOUS/CONIFEROUS MIX)',
+             'RIPARIAN FOREST', 
+			 'SHORELINE FOREST', 
+			 'TREED BOG', 
+			 'TREED FEN', 
+			 'TREED SWAMP')
+			or
+			UPPER(s1.Blank_Column) in 
+			('CONIFER FOREST - DRY', 
+			 'CONIFER FOREST - MESIC (AVERAGE)', 
+			 'CONIFER FOREST - MOIST/WET',
+             'DECIDUOUS/BROADLEAF FOREST', 
+			 'MIXED FOREST (DECIDUOUS/CONIFEROUS MIX)',
+             'RIPARIAN FOREST', 
+			 'SHORELINE FOREST', 
+			 'TREED BOG', 
+			 'TREED FEN', 
+			 'TREED SWAMP')
+			or 
+			(UPPER(s1.hab_subtype) like '%FORESTED%' 
+			 and not UPPER(s1.hab_subtype) like '%NON-FORESTED%' 
+			 and not UPPER(s1.hab_subtype) like '%NON - FORESTED BOG%')
+			or
+			(UPPER(s1.Blank_Column) like '%FORESTED%' 
+			 and not UPPER(s1.Blank_Column) like '%NON-FORESTED%' 
+			 and not UPPER(s1.Blank_Column) like '%NON - FORESTED BOG%')
+		   )
+	        and
+			UPPER(s1.HAB2_SUBTYPE) not like '%PARKLAND%'
+			AND NOT
+			(a.BGC_ZONE IN ('ESSF','MH') and substring(a.BGC_SUBZON,3) in ('p','u','w'))
+	        AND
+	        a.BGC_ZONE NOT IN ('AT', 'BAFA', 'CMA', 'IMA')
+		then 'NCBF'
+	when UPPER(s1.HAB_SUBTYPE) in ('UNKNOWN', 'UNDEFINED') and
+		   a.BGC_ZONE NOT IN ('AT', 'BAFA', 'CMA', 'IMA') and
+	       substring(a.BGC_SUBZON,3) not in ('p','u','w') and
+			a.SITE_S1 != '00'
+		then 'UNK'
+	when  a.BGC_ZONE IN ('AT', 'BAFA', 'CMA', 'IMA') or
+	       substring(a.BGC_SUBZON,3) in ('p','u','w') or a.SITE_S1 = '00'
+		  then 'NP'
+	when s1.bapid is Null 
+		then 'NM'
+	 else 'NM'
+end as class_1,
+case 
+	when s2.si not Null
+		then 'IN SIBEC'
+	when (UPPER(s2.HAB_SUBTYPE) in 
+			('CONIFER FOREST - DRY', 
+			 'CONIFER FOREST - MESIC (AVERAGE)', 
+			 'CONIFER FOREST - MOIST/WET',
+             'DECIDUOUS/BROADLEAF FOREST', 
+			 'MIXED FOREST (DECIDUOUS/CONIFEROUS MIX)',
+             'RIPARIAN FOREST', 
+			 'SHORELINE FOREST', 
+			 'TREED BOG', 
+			 'TREED FEN', 
+			 'TREED SWAMP')
+			or
+			UPPER(s2.Blank_Column) in 
+			('CONIFER FOREST - DRY', 
+			 'CONIFER FOREST - MESIC (AVERAGE)', 
+			 'CONIFER FOREST - MOIST/WET',
+             'DECIDUOUS/BROADLEAF FOREST', 
+			 'MIXED FOREST (DECIDUOUS/CONIFEROUS MIX)',
+             'RIPARIAN FOREST', 
+			 'SHORELINE FOREST', 
+			 'TREED BOG', 
+			 'TREED FEN', 
+			 'TREED SWAMP')
+			or 
+			(UPPER(s2.hab_subtype) like '%FORESTED%' 
+			 and not UPPER(s2.hab_subtype) like '%NON-FORESTED%' 
+			 and not UPPER(s2.hab_subtype) like '%NON - FORESTED BOG%')
+			or
+			(UPPER(s2.Blank_Column) like '%FORESTED%' 
+			 and not UPPER(s2.Blank_Column) like '%NON-FORESTED%' 
+			 and not UPPER(s2.Blank_Column) like '%NON - FORESTED BOG%')
+		   )
+	        and
+			UPPER(s2.HAB2_SUBTYPE) not like '%PARKLAND%'
+			AND NOT
+			(a.BGC_ZONE IN ('ESSF','MH') and substring(a.BGC_SUBZON,3) in ('p','u','w'))
+	        AND
+	        a.BGC_ZONE NOT IN ('AT', 'BAFA', 'CMA', 'IMA')
+		then 'NCBF'
+	when UPPER(s2.HAB_SUBTYPE) in ('UNKNOWN', 'UNDEFINED') and
+		   a.BGC_ZONE NOT IN ('AT', 'BAFA', 'CMA', 'IMA') and
+	       substring(a.BGC_SUBZON,3) not in ('p','u','w') and
+			a.SITE_S2 != '00'
+		then 'UNK'
+	when  a.BGC_ZONE IN ('AT', 'BAFA', 'CMA', 'IMA') or
+	       substring(a.BGC_SUBZON,3) in ('p','u','w') or a.SITE_S2 = '00'
+		  then 'NP'
+	when s2.bapid is Null 
+		then 'NM'
+	 else 'NM'
+end as class_2,
+case 
+	when s3.si not Null
+		then 'IN SIBEC'
+	when (UPPER(s3.HAB_SUBTYPE) in 
+			('CONIFER FOREST - DRY', 
+			 'CONIFER FOREST - MESIC (AVERAGE)', 
+			 'CONIFER FOREST - MOIST/WET',
+             'DECIDUOUS/BROADLEAF FOREST', 
+			 'MIXED FOREST (DECIDUOUS/CONIFEROUS MIX)',
+             'RIPARIAN FOREST', 
+			 'SHORELINE FOREST', 
+			 'TREED BOG', 
+			 'TREED FEN', 
+			 'TREED SWAMP')
+			or
+			UPPER(s3.Blank_Column) in 
+			('CONIFER FOREST - DRY', 
+			 'CONIFER FOREST - MESIC (AVERAGE)', 
+			 'CONIFER FOREST - MOIST/WET',
+             'DECIDUOUS/BROADLEAF FOREST', 
+			 'MIXED FOREST (DECIDUOUS/CONIFEROUS MIX)',
+             'RIPARIAN FOREST', 
+			 'SHORELINE FOREST', 
+			 'TREED BOG', 
+			 'TREED FEN', 
+			 'TREED SWAMP')
+			or 
+			(UPPER(s3.hab_subtype) like '%FORESTED%' 
+			 and not UPPER(s3.hab_subtype) like '%NON-FORESTED%' 
+			 and not UPPER(s3.hab_subtype) like '%NON - FORESTED BOG%')
+			or
+			(UPPER(s3.Blank_Column) like '%FORESTED%' 
+			 and not UPPER(s3.Blank_Column) like '%NON-FORESTED%' 
+			 and not UPPER(s3.Blank_Column) like '%NON - FORESTED BOG%')
+		   )
+	        and
+			UPPER(s3.HAB2_SUBTYPE) not like '%PARKLAND%'
+			AND NOT
+			(a.BGC_ZONE IN ('ESSF','MH') and substring(a.BGC_SUBZON,3) in ('p','u','w'))
+	        AND
+	        a.BGC_ZONE NOT IN ('AT', 'BAFA', 'CMA', 'IMA')
+		then 'NCBF'
+	when UPPER(s3.HAB_SUBTYPE) in ('UNKNOWN', 'UNDEFINED') and
+		   a.BGC_ZONE NOT IN ('AT', 'BAFA', 'CMA', 'IMA') and
+	       substring(a.BGC_SUBZON,3) not in ('p','u','w') and
+			a.SITE_S3 != '00'
+		then 'UNK'
+	when  a.BGC_ZONE IN ('AT', 'BAFA', 'CMA', 'IMA') or
+	       substring(a.BGC_SUBZON,3) in ('p','u','w') or a.SITE_S3 = '00'
+		  then 'NP'
+	when s3.bapid is Null 
+		then 'NM'
+	 else 'NM'
+end as class_3,
+case when s1.si is Null
+	   then 'N'
+	 else 'Y'
+end as s1_in,
+case when s2.si is Null
+	   then 'N'
+	 else 'Y'
+end as s2_in,
+case when s3.si is Null
+	   then 'N'
+	 else 'Y'
+end as s3_in,
+case when  s1.si is Null and (UPPER(s1.HAB_SUBTYPE) in 
+			('CONIFER FOREST - DRY', 
+			 'CONIFER FOREST - MESIC (AVERAGE)', 
+			 'CONIFER FOREST - MOIST/WET',
+             'DECIDUOUS/BROADLEAF FOREST', 
+			 'MIXED FOREST (DECIDUOUS/CONIFEROUS MIX)',
+             'RIPARIAN FOREST', 
+			 'SHORELINE FOREST', 
+			 'TREED BOG', 
+			 'TREED FEN', 
+			 'TREED SWAMP')
+			or
+			UPPER(s1.Blank_Column) in 
+			('CONIFER FOREST - DRY', 
+			 'CONIFER FOREST - MESIC (AVERAGE)', 
+			 'CONIFER FOREST - MOIST/WET',
+             'DECIDUOUS/BROADLEAF FOREST', 
+			 'MIXED FOREST (DECIDUOUS/CONIFEROUS MIX)',
+             'RIPARIAN FOREST', 
+			 'SHORELINE FOREST', 
+			 'TREED BOG', 
+			 'TREED FEN', 
+			 'TREED SWAMP')
+			or 
+			(UPPER(s1.hab_subtype) like '%FORESTED%' 
+			 and not UPPER(s1.hab_subtype) like '%NON-FORESTED%' 
+			 and not UPPER(s1.hab_subtype) like '%NON - FORESTED BOG%')
+			or
+			(UPPER(s1.Blank_Column) like '%FORESTED%' 
+			 and not UPPER(s1.Blank_Column) like '%NON-FORESTED%' 
+			 and not UPPER(s1.Blank_Column) like '%NON - FORESTED BOG%')
+		   )
+	        and
+			UPPER(s1.HAB2_SUBTYPE) not like '%PARKLAND%'
+			AND NOT
+			(a.BGC_ZONE IN ('ESSF','MH') and substring(a.BGC_SUBZON,3) in ('p','u','w'))
+	        AND
+	        a.BGC_ZONE NOT IN ('AT', 'BAFA', 'CMA', 'IMA')
+	THEN 'Y'
+	else 'N'
+	end as FORESTED_NO_SIB_1,
+case when s1.si is Null and   UPPER(s1.HAB_SUBTYPE) in ('UNKNOWN', 'UNDEFINED') and
+		   a.BGC_ZONE NOT IN ('AT', 'BAFA', 'CMA', 'IMA') and
+	       substring(a.BGC_SUBZON,3) not in ('p','u','w') and
+			a.SITE_S1 != '00'
+	 then 'Y'
+	else 'N'
+	end as UNK_NO_SIB_1,
+case when 		   a.BGC_ZONE IN ('AT', 'BAFA', 'CMA', 'IMA') or
+	       substring(a.BGC_SUBZON,3) in ('p','u','w') or a.SITE_S1 = '00'
+	then 'Y'
+	else 'N'
+	end as NP_1,
+case when  s2.si is Null and (UPPER(s2.HAB_SUBTYPE) in 
+			('CONIFER FOREST - DRY', 
+			 'CONIFER FOREST - MESIC (AVERAGE)', 
+			 'CONIFER FOREST - MOIST/WET',
+             'DECIDUOUS/BROADLEAF FOREST', 
+			 'MIXED FOREST (DECIDUOUS/CONIFEROUS MIX)',
+             'RIPARIAN FOREST', 
+			 'SHORELINE FOREST', 
+			 'TREED BOG', 
+			 'TREED FEN', 
+			 'TREED SWAMP')
+			or
+			UPPER(s2.Blank_Column) in 
+			('CONIFER FOREST - DRY', 
+			 'CONIFER FOREST - MESIC (AVERAGE)', 
+			 'CONIFER FOREST - MOIST/WET',
+             'DECIDUOUS/BROADLEAF FOREST', 
+			 'MIXED FOREST (DECIDUOUS/CONIFEROUS MIX)',
+             'RIPARIAN FOREST', 
+			 'SHORELINE FOREST', 
+			 'TREED BOG', 
+			 'TREED FEN', 
+			 'TREED SWAMP')
+			or 
+			(UPPER(s2.hab_subtype) like '%FORESTED%' 
+			 and not UPPER(s2.hab_subtype) like '%NON-FORESTED%' 
+			 and not UPPER(s2.hab_subtype) like '%NON - FORESTED BOG%')
+			or
+			(UPPER(s2.Blank_Column) like '%FORESTED%' 
+			 and not UPPER(s2.Blank_Column) like '%NON-FORESTED%' 
+			 and not UPPER(s2.Blank_Column) like '%NON - FORESTED BOG%')
+		   )
+	        and
+			UPPER(s2.HAB2_SUBTYPE) not like '%PARKLAND%'
+			AND NOT
+			(a.BGC_ZONE IN ('ESSF','MH') and substring(a.BGC_SUBZON,3) in ('p','u','w'))
+	        AND
+	        a.BGC_ZONE NOT IN ('AT', 'BAFA', 'CMA', 'IMA')
+	THEN 'Y'
+	else 'N'
+	end as FORESTED_NO_SIB_2,
+case when s2.si is Null and   UPPER(s2.HAB_SUBTYPE) in ('UNKNOWN', 'UNDEFINED') and
+		   a.BGC_ZONE NOT IN ('AT', 'BAFA', 'CMA', 'IMA') and
+	       substring(a.BGC_SUBZON,3) not in ('p','u','w') and
+			a.SITE_S2 != '00'
+	 then 'Y'
+	else 'N'
+	end as UNK_NO_SIB_2,
+case when 		   a.BGC_ZONE IN ('AT', 'BAFA', 'CMA', 'IMA') or
+	       substring(a.BGC_SUBZON,3) in ('p','u','w') or a.SITE_S2 = '00'
+	then 'Y'
+	else 'N'
+	end as NP_2,
+case when  s3.si is Null and (UPPER(s3.HAB_SUBTYPE) in 
+			('CONIFER FOREST - DRY', 
+			 'CONIFER FOREST - MESIC (AVERAGE)', 
+			 'CONIFER FOREST - MOIST/WET',
+             'DECIDUOUS/BROADLEAF FOREST', 
+			 'MIXED FOREST (DECIDUOUS/CONIFEROUS MIX)',
+             'RIPARIAN FOREST', 
+			 'SHORELINE FOREST', 
+			 'TREED BOG', 
+			 'TREED FEN', 
+			 'TREED SWAMP')
+			or
+			UPPER(s3.Blank_Column) in 
+			('CONIFER FOREST - DRY', 
+			 'CONIFER FOREST - MESIC (AVERAGE)', 
+			 'CONIFER FOREST - MOIST/WET',
+             'DECIDUOUS/BROADLEAF FOREST', 
+			 'MIXED FOREST (DECIDUOUS/CONIFEROUS MIX)',
+             'RIPARIAN FOREST', 
+			 'SHORELINE FOREST', 
+			 'TREED BOG', 
+			 'TREED FEN', 
+			 'TREED SWAMP')
+			or 
+			(UPPER(s3.hab_subtype) like '%FORESTED%' 
+			 and not UPPER(s3.hab_subtype) like '%NON-FORESTED%' 
+			 and not UPPER(s3.hab_subtype) like '%NON - FORESTED BOG%')
+			or
+			(UPPER(s3.Blank_Column) like '%FORESTED%' 
+			 and not UPPER(s3.Blank_Column) like '%NON-FORESTED%' 
+			 and not UPPER(s3.Blank_Column) like '%NON - FORESTED BOG%')
+		   )
+	        and
+			UPPER(s3.HAB2_SUBTYPE) not like '%PARKLAND%'
+			AND NOT
+			(a.BGC_ZONE IN ('ESSF','MH') and substring(a.BGC_SUBZON,3) in ('p','u','w'))
+	        AND
+	        a.BGC_ZONE NOT IN ('AT', 'BAFA', 'CMA', 'IMA')
+	THEN 'Y'
+	else 'N'
+	end as FORESTED_NO_SIB_3,
+case when   s3.si is Null and  UPPER(s3.HAB_SUBTYPE) in ('UNKNOWN', 'UNDEFINED') and
+		   a.BGC_ZONE NOT IN ('AT', 'BAFA', 'CMA', 'IMA') and
+	       substring(a.BGC_SUBZON,3) not in ('p','u','w') and
+			a.SITE_S3 != '00'
+	 then 'Y'
+	else 'N'
+	end as UNK_NO_SIB_3,
+case when 		   a.BGC_ZONE IN ('AT', 'BAFA', 'CMA', 'IMA') or
+	       substring(a.BGC_SUBZON,3) in ('p','u','w') or a.SITE_S3 = '00'
+	then 'Y'
+	else 'N'
+	end as NP_3
+	 
+from pspl.pem_long_tbl_skinny a 
+left outer join   pspl.xwalk_filtered s1 on (a.key1 = s1.xwalkkey  )
+left outer join   pspl.xwalk_filtered s2 on (a.key2 = s2.xwalkkey ) 
+left outer join   pspl.xwalk_filtered s3 on (a.key3 = s3.xwalkkey )
+left outer join pspl.pem_long_tbl_skinny_filter sk on a.teis_id =sk.teis_id
+where sk.teis_id is NULL;
+
+

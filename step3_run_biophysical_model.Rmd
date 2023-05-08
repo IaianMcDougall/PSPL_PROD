@@ -11,21 +11,29 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Params:
 ```{r params,eval=TRUE, echo=TRUE, message=FALSE}
+
+fileTag <- gsub(", ","",toString((floor(runif(6, min=0, max=9)))))
+
 root <- 'D:/Projects/PSPL_2022/IAIAN_VERSION/R_SCRIPTS'
-publicTemp <- 'C:/Users/Public/pspl/temp'
+inWNApath <- 'C:/Users/Public/pspl/temp'
+outWNApath
 pgDB <- 'prov_data'
 
 #In tables
 geomTable <- 'whse.all_bc_gr_skey'
-resTable <- 'whse.all_bc_res'
+resTable <- 'whse.all_bc_gr_skey'
+
+#SQL files
+makeLatLongSql <- "D:/Projects/PSPL_2022/IAIAN_VERSION/R_SCRIPTS/sql/make_lat_long_fields.sql"
+exportInputTbls <- 'D:/Projects/PSPL_2022/IAIAN_VERSION/R_SCRIPTS/sql/exportWNAinputcsv.sql'
 
 #Field Names
-id <- 'ogc_fid'
+id <- 'gr_skey'
 becLbl <- 'bgc_label'
 zone <- 'zone'
-ele <- 'val_ele'
-slp <- 'val_slp'
-asp <- 'val_asp'
+ele <- 'ele_ele'
+slp <- 'slp_slp'
+asp <- 'asp_asp'
 lat <- 'LAT_WGS84'
 long <- 'LONG_WGS84'
 
@@ -37,76 +45,49 @@ wnaSchema <- 'whse'
 wnaTable <- 'climatewna_ogc_fid'
 bpTbl <- 'pspl.biophysical_outputs'
 
+pgConn <- get_pg_conn_list()
+
 ```
 
 ## functions
 ```{r functions,eval=TRUE, echo=TRUE, message=FALSE}
 library(sf)
+library(faibDataManagement)
 library(RPostgres)
 library(keyring)
 library(terra)
 library(rgdal)
-
-getTableQueryPsql<-function(sql){
-  conn<-dbConnect(RPostgres::Postgres(),
-                  host = key_get('dbhost', keyring = 'localpsql'),
-                  user = key_get('dbuser', keyring = 'localpsql'),
-                  dbname = 'prov_data',
-                  password = key_get('dbpass', keyring = 'localpsql'),
-                  port = "5432"
-  )
-  on.exit(dbDisconnect(conn))
-  dbGetQuery(conn, sql)}
-
-append2Psql<-function(pgTbl,inDF){
-  conn<-dbConnect(RPostgres::Postgres(),
-                  host = key_get('dbhost', keyring = 'localpsql'),
-                  user = key_get('dbuser', keyring = 'localpsql'),
-                  dbname = 'prov_data',
-                  password = key_get('dbpass', keyring = 'localpsql'),
-                  port = "5432"
-  )
-  on.exit(dbDisconnect(conn))
-  dbWriteTable(conn, pgTbl,value = inDF, overwrite = F, append = T, row.names = FALSE)}
-
-runSQL <- function(sqlVar,sqlFile ){
-          cmd <-  c("-d",pgDB,"-f",sqlFile)
-          for(i in sqlVar){
-            cmd <- append(cmd,"-v")
-            cmd <- append(cmd,i)
-          }
-        print(cmd)
-       print(system2("psql",args=cmd,wait=TRUE,stdout=TRUE,stderr=TRUE)) 
-        }
-
-
-
 ```
 
 ## Calc lat/longs
 
-Creating a tbale with lat/long_table coordinates to PostGres
+Creating a table with lat/long_table coordinates to PostGres
 
 ```{r calc_lat_long,eval=FALSE, echo=FALSE, message=FALSE}
+
+##Remove schema from latlongtbl name
       if (grepl("\\.", latlongtbl)) {
         noSchema <- unlist(strsplit(latlongtbl, split = "[.]"))[-1]}else {
         noSchema <- latlongtbl
-      }
-        indexName <- paste0('inx_', noSchema)
-        x1 <- paste0("latlongtbl=",latlongtbl)
-        x2 <- paste0("geomTable=",geomTable)
-        x3 <- paste0("indexName=",indexName)
-        cmd <- c("-d",pgDB,"-f","D:/Projects/PSPL_2022/IAIAN_VERSION/R_SCRIPTS/sql/make_lat_long_fields.sql", "-v",x1, "-v", x2, "-v", x3)
-        ret_code <- print(system2("psql",args=cmd,wait=TRUE,stdout=TRUE,stderr=TRUE))
-        
-        print('Lat long table ')
-        print(getTableQueryPsql(paste0('select
+        }
+
+
+indexName <- paste0('inx_', noSchema)
+#Create vector of input variables for sql run
+inVect <- c(paste0("latlongtbl=",latlongtbl),
+            paste0("geomTable=",geomTable),
+            paste0("indexName=",indexName))
+
+#run sql file from psql  
+runSQL(inVect, makeLatLongSql,pgDB)      
+print('Lat long table ')
+print(getTableQueryPG(paste0('select
                                         count(*) as rowCount,
                                         min(',long,') as xmin,
                                         min(',lat,') as ymin,
                                         max(',long,') as xmax,
                                         max(',lat,') as ymax 
-                                        from ',latlongtbl,';')))
+                                        from ',latlongtbl,';'),pgConn))
 ```
 
 ## Create csv WNA input tables
@@ -114,8 +95,9 @@ Creating a tbale with lat/long_table coordinates to PostGres
 Exports WNA inputs table into a specified number of csv files
 
 ```{r chunk_inputs,eval=FALSE, echo=FALSE, message=FALSE}
+  #calculate the amount of rows to be used in each WNA input table.  (all 95 million is too large for the WNA model)
         chunks <- 8
-        rowsPerChunk <- (getTableQueryPsql(paste0('select count(*) as count from ',latlongtbl))$count/chunks) + 1
+        rowsPerChunk <- (getTableQueryPG(paste0('select count(*) as count from ',latlongtbl), pgConn)$count/chunks) + 1
         print(rowsPerChunk)
         chunckVec <- sequence(chunks) * rowsPerChunk 
         print(chunckVec)
@@ -133,10 +115,10 @@ Exports WNA inputs table into a specified number of csv files
                     paste0("resTable=",resTable),
                     paste0("low=",low),
                     paste0("high=",high),
-                    paste0("filename=","'", publicTemp,"/wnaInput_",x,".csv", "'"),
+                    paste0("filename=","'", inWNApath,"/wnaInput_",which(chunkVec == x),"_",fileTag,".csv", "'"),
                     paste0("becLbl=",becLbl),
                     paste0("latlongtbl=",latlongtbl))
-        runSQL(sqlVar,'D:/Projects/PSPL_2022/IAIAN_VERSION/R_SCRIPTS/sql/exportWNAinputcsv.sql')
+        runSQL(sqlVar,exportInputTbls,pgDB)
         }
         time <- system.time(lapply(chunckVec,exportWNAfun))
         print(time/60)
@@ -155,19 +137,10 @@ Imports wna outputs to pg
 ```{r wnaOutputs2pg,eval=FALSE, echo=FALSE, message=FALSE}
  #create a empty pg table for climatewna outputs
   sqlVar <- c(paste0("outTbl=",wnaPG))
-  runSQL(sqlVar,'D:/Projects/PSPL_2022/IAIAN_VERSION/R_SCRIPTS/sql/create_climatewna_pg_tbl.sql')
+  runSQL(sqlVar,'D:/Projects/PSPL_2022/IAIAN_VERSION/R_SCRIPTS/sql/create_climatewna_pg_tbl.sql',pgDB)
   
 #loop through Climatewna ouputs and append to pg table
-outputVec <- c('C:/Users/Public/pspl/temp/wnaInput_11849882.5_Normal_1961_1990Y.csv',
-               'C:/Users/Public/pspl/temp/wnaInput_94799060_Normal_1961_1990Y.csv',
-               'C:/Users/Public/pspl/temp/wnaInput_82949177.5_Normal_1961_1990Y.csv',
-               'C:/Users/Public/pspl/temp/wnaInput_71099295_Normal_1961_1990Y.csv',
-               'C:/Users/Public/pspl/temp/wnaInput_59249412.5_Normal_1961_1990Y.csv',
-               'C:/Users/Public/pspl/temp/wnaInput_47399530_Normal_1961_1990Y.csv',
-               'C:/Users/Public/pspl/temp/wnaInput_35549647.5_Normal_1961_1990Y.csv',
-               'C:/Users/Public/pspl/temp/wnaInput_23699765_Normal_1961_1990Y.csv')
-outputVec <- c('C:/Users/Public/pspl/temp/wnaInput_11849882.5_Normal_1961_1990Y.csv',
-               'C:/Users/Public/pspl/temp/wnaInput_94799060_Normal_1961_1990Y.csv')
+files <- list.files(path = outWNAPath, pattern = glue('99','.+Normal_1961_1990Y.csv') )
 
 oldNames <- c('DD.0','DD.5','DD.18','DD.18.1')
 newNames <- c('ddlt0','ddgt5','ddlt18','ddgt18')
@@ -177,10 +150,10 @@ wnaR <- read.csv(file = x)
 for (i in 1:length(oldNames)) {
   names(wnaR)[names(wnaR) == oldNames[i]] <- newNames[i]} 
 names(wnaR) <- tolower(names(wnaR))
-append2Psql(DBI::Id(schema = wnaSchema, table = wnaTable), wnaR)
+faibDataManagement::df2PG(DBI::Id(schema = wnaSchema, table = wnaTable), wnaR,connList,overwrite=F,append=T)
 }
 
-lapply(outputVec,appendPGwna)
+lapply(files,appendPGwna)
 
 ```
 ## Biophysical
@@ -194,7 +167,7 @@ Biophysical
 
         sqlVar <- c(paste0("wnaTable=",wnaPG),
                     paste0("bptbl=",bpTbl))
-        runSQL(sqlVar,'D:/Projects/PSPL_2022/IAIAN_VERSION/R_SCRIPTS/sql/biophysical_no_pem.sql')
+        faibDataManagement::runSQL(sqlVar,'D:/Projects/PSPL_2022/IAIAN_VERSION/R_SCRIPTS/sql/biophysical_no_pem.sql',pgDB)
 
 ```
 

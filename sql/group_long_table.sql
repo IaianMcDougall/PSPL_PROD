@@ -3,8 +3,14 @@ set search_path = :schema;
 drop table if exists :grpTbl;
 create table :grpTbl as
 
-with t1 as ( select
-BAPID,
+with 
+
+prevXwalkIDs as (select distinct bapid
+from :xwalkprev),
+
+
+t1 as ( select
+a.BAPID,
 COALESCE(replace(BGC_ZONE,' ',''),'')  || COALESCE(replace(BGC_SUBZON,' ',''),'') || COALESCE(BGC_VRT::text,'') || COALESCE(replace(BGC_PHASE,' ',''),'')  as BGC_UNIT,
 COALESCE(replace(SITE_S1,' ',''),'')  as SITE_S1,
 COALESCE(replace(SITEMC_S1,' ',''),'')  as SITEMC_S1,
@@ -19,7 +25,10 @@ SDEC_1,
 SDEC_2,
 SDEC_3,
 shape_area
-from :lngTbl),
+from :lngTbl a
+left outer join :bapids b on a.bapid = b.bapid
+left outer join prevXwalkIDs c on a.bapid = c.bapid
+where (b.bapid > 0 and (b.approved is Null or b.approved in('N','Y') ) ) or c.bapid > 0 ),
 
 t2 as ((select 
 	BAPID,
